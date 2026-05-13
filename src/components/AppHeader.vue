@@ -30,7 +30,7 @@ const nav = [
           }"
         >T</span>
         <span class="text-sm tracking-wide text-[var(--color-text-soft)] group-hover:text-[var(--color-text)] transition">
-          Tomm 的食記與筆記
+          Tommmmm 的食記與筆記
         </span>
       </RouterLink>
 
