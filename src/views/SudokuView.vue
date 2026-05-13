@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 
 const STORAGE_KEY = 'tommblog-sudoku-save-v1'
 
@@ -80,9 +80,13 @@ const tick = ref(0)
 const notice = ref('')
 const showLoadDialog = ref(false)
 const showCompleteDialog = ref(false)
+const showNewGameDialog = ref(false)
+const showSolutionConfirmDialog = ref(false)
+const pendingDifficulty = ref('easy')
 const generating = ref(false)
 let timerId = null
 let noticeTimer = null
+let suppressAutoSave = false
 
 /* ─────────────── 計算屬性 ─────────────── */
 const elapsedSec = computed(() => {
@@ -98,19 +102,6 @@ const timeText = computed(() => {
     .padStart(2, '0')
   const ss = (s % 60).toString().padStart(2, '0')
   return `${m}:${ss}`
-})
-
-const errorCells = computed(() => {
-  const set = new Set()
-  if (!board.value || !solution.value || !puzzle.value) return set
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      if (puzzle.value[r][c] !== 0) continue
-      const v = board.value[r][c]
-      if (v !== 0 && v !== solution.value[r][c]) set.add(`${r}-${c}`)
-    }
-  }
-  return set
 })
 
 const isComplete = computed(() => {
@@ -134,6 +125,7 @@ function flash(msg) {
 
 function startNewGame(diff) {
   generating.value = true
+  suppressAutoSave = true
   setTimeout(() => {
     const { puzzle: p, solution: s } = generatePuzzle(diff)
     puzzle.value = p
@@ -146,6 +138,13 @@ function startNewGame(diff) {
     startedAt.value = Date.now()
     showCompleteDialog.value = false
     generating.value = false
+    if (!timerId) {
+      timerId = setInterval(() => {
+        tick.value++
+      }, 1000)
+    }
+    suppressAutoSave = false
+    saveGame(true)
   }, 30)
 }
 
@@ -164,6 +163,7 @@ function setNumber(n) {
   if (isLocked(r, c)) return
   board.value[r] = [...board.value[r]]
   board.value[r][c] = n
+  saveGame(true)
   if (isComplete.value) {
     showCompleteDialog.value = true
     if (timerId) clearInterval(timerId)
@@ -177,13 +177,29 @@ function clearCell() {
   if (isLocked(r, c)) return
   board.value[r] = [...board.value[r]]
   board.value[r][c] = 0
+  saveGame(true)
 }
 
-function toggleSolution() {
-  showingSolution.value = !showingSolution.value
+function requestShowSolution() {
+  if (showingSolution.value) {
+    // 隱藏解答不需要確認
+    showingSolution.value = false
+    return
+  }
+  showSolutionConfirmDialog.value = true
 }
 
-function saveGame() {
+function confirmShowSolution() {
+  showingSolution.value = true
+  showSolutionConfirmDialog.value = false
+}
+
+function cancelShowSolution() {
+  showSolutionConfirmDialog.value = false
+}
+
+function saveGame(silent = false) {
+  if (suppressAutoSave) return
   if (!board.value) return
   const data = {
     puzzle: puzzle.value,
@@ -195,9 +211,9 @@ function saveGame() {
   }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    flash('已儲存進度 ✓')
+    if (!silent) flash('已儲存進度 ✓')
   } catch (e) {
-    flash('儲存失敗：' + (e?.message || ''))
+    if (!silent) flash('儲存失敗：' + (e?.message || ''))
   }
 }
 
@@ -214,6 +230,7 @@ function readSave() {
 function loadSave() {
   const data = readSave()
   if (!data) return false
+  suppressAutoSave = true
   puzzle.value = data.puzzle
   board.value = data.board
   solution.value = data.solution
@@ -228,6 +245,7 @@ function loadSave() {
       tick.value++
     }, 1000)
   }
+  suppressAutoSave = false
   return true
 }
 
@@ -244,31 +262,33 @@ function chooseLoad() {
 
 function chooseNew() {
   clearSave()
-  startNewGame(difficulty.value || 'easy')
   showLoadDialog.value = false
+  openNewGameDialog()
 }
 
-function newGameWith(diff) {
-  if (showingSolution.value || hasUserProgress()) {
-    if (!confirm(`要開始新的「${DIFF_LABEL[diff]}」遊戲嗎？目前的進度會被清除（除非你先按儲存）。`))
-      return
-  }
+function openNewGameDialog() {
+  pendingDifficulty.value = difficulty.value || 'easy'
+  showNewGameDialog.value = true
+}
+
+function confirmNewGame() {
+  const diff = pendingDifficulty.value || 'easy'
+  showNewGameDialog.value = false
   startNewGame(diff)
 }
 
-function hasUserProgress() {
-  if (!board.value || !puzzle.value) return false
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      if (puzzle.value[r][c] === 0 && board.value[r][c] !== 0) return true
-    }
+function cancelNewGame() {
+  showNewGameDialog.value = false
+  // 若目前還沒有遊戲在進行中（例如進入頁面但選擇否），仍然要保持狀態
+  if (!board.value) {
+    // 若沒局可玩就再次打開
+    showNewGameDialog.value = true
   }
-  return false
 }
 
 /* ─────────────── 鍵盤輸入 ─────────────── */
 function onKey(e) {
-  if (showLoadDialog.value) return
+  if (showLoadDialog.value || showNewGameDialog.value || showSolutionConfirmDialog.value) return
   if (e.key >= '1' && e.key <= '9') {
     setNumber(Number(e.key))
   } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
@@ -312,18 +332,20 @@ onMounted(() => {
   if (readSave()) {
     showLoadDialog.value = true
   } else {
-    startNewGame('easy')
+    openNewGameDialog()
   }
-  timerId = setInterval(() => {
-    tick.value++
-  }, 1000)
   window.addEventListener('keydown', onKey)
+  window.addEventListener('beforeunload', () => {
+    saveGame(true)
+  })
 })
 
 onBeforeUnmount(() => {
   if (timerId) clearInterval(timerId)
   if (noticeTimer) clearTimeout(noticeTimer)
   window.removeEventListener('keydown', onKey)
+  // 卸載前保存最新狀態
+  saveGame(true)
 })
 
 function displayValue(r, c) {
@@ -334,61 +356,53 @@ function displayValue(r, c) {
 </script>
 
 <template>
-  <section class="container-page pt-12 pb-6">
+  <section class="container-page pt-10 sm:pt-12 pb-4 sm:pb-6">
     <p class="chip mb-3">排隊小遊戲</p>
     <h1
-      class="font-serif text-3xl sm:text-4xl leading-tight tracking-tight"
+      class="font-serif text-2xl sm:text-4xl leading-tight tracking-tight"
       :style="{ color: 'var(--color-text)' }"
     >
       數獨・打發等位的十分鐘
     </h1>
     <p class="mt-3 text-sm sm:text-base text-[var(--color-text-soft)] leading-relaxed">
-      隨機產生題目，三種難度任選。按「儲存」可記住目前進度，下次回來會問你要不要繼續上一局。
+      隨機產生題目，三種難度任選。每下一步會自動儲存，下次回來會問你要不要繼續上一局。
     </p>
   </section>
 
-  <section class="container-page pb-16">
-    <div class="card p-4 sm:p-6">
+  <section class="container-page pb-12 sm:pb-16">
+    <div class="card p-3 sm:p-6">
       <!-- 工具列 -->
-      <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
-        <div class="flex items-center gap-1 p-1 rounded-full" :style="{ background: 'var(--color-bg-soft)', border: '1px solid var(--color-border)' }">
-          <button
-            v-for="d in ['easy', 'medium', 'hard']"
-            :key="d"
-            @click="newGameWith(d)"
-            class="px-3 py-1.5 rounded-full text-sm transition"
-            :style="
-              difficulty === d
-                ? { background: 'var(--color-accent)', color: '#0b0d10', fontWeight: 600 }
-                : { color: 'var(--color-text-soft)' }
-            "
-          >
-            {{ DIFF_LABEL[d] }}
-          </button>
-        </div>
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <button
+          @click="openNewGameDialog"
+          class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-sm font-medium transition hover:opacity-90"
+          :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
+        >
+          ＋ 新遊戲
+        </button>
 
         <div
-          class="ml-auto flex items-center gap-2 sm:gap-3 text-sm"
+          class="ml-auto flex items-center gap-2 sm:gap-3 text-xs sm:text-sm"
           :style="{ color: 'var(--color-text-soft)' }"
         >
           <span class="tabular-nums" :style="{ color: 'var(--color-text)' }">⏱ {{ timeText }}</span>
           <span class="hidden sm:inline">|</span>
           <span class="hidden sm:inline">難度：{{ DIFF_LABEL[difficulty] }}</span>
+          <span class="sm:hidden">{{ DIFF_LABEL[difficulty] }}</span>
         </div>
       </div>
 
-      <div class="flex flex-col lg:flex-row gap-6">
+      <div class="flex flex-col lg:flex-row gap-4 sm:gap-6">
         <!-- 數獨棋盤 -->
         <div class="flex-1 flex justify-center">
           <div v-if="generating" class="aspect-square w-full max-w-md grid place-items-center text-sm" :style="{ color: 'var(--color-text-mute)' }">產生題目中…</div>
           <div
             v-else-if="board"
-            class="grid grid-cols-9 aspect-square w-full max-w-md select-none"
+            class="grid grid-cols-9 aspect-square w-full max-w-[min(92vw,28rem)] select-none"
             :style="{
               background: 'var(--color-border)',
               gap: '1px',
               padding: '2px',
-              borderRadius: '0.75rem',
               boxShadow: '0 0 0 1px var(--color-border)',
             }"
           >
@@ -397,9 +411,8 @@ function displayValue(r, c) {
                 v-for="(_, c) in row"
                 :key="r + '-' + c"
                 @click="selectCell(r, c)"
-                class="aspect-square grid place-items-center text-base sm:text-xl font-medium tabular-nums transition relative"
+                class="aspect-square grid place-items-center text-sm sm:text-xl font-medium tabular-nums transition relative"
                 :class="[
-                  // 3x3 邊框
                   (c % 3 === 2 && c !== 8) ? 'sudoku-r' : '',
                   (r % 3 === 2 && r !== 8) ? 'sudoku-b' : '',
                 ]"
@@ -412,18 +425,13 @@ function displayValue(r, c) {
                       : isHighlighted(r, c)
                       ? 'color-mix(in srgb, var(--color-accent) 5%, var(--color-bg-elev))'
                       : 'var(--color-bg-elev)',
-                  color: errorCells.has(r + '-' + c)
-                    ? '#ef4444'
-                    : isLocked(r, c)
-                    ? 'var(--color-text)'
-                    : 'var(--color-accent)',
+                  color: isLocked(r, c) ? 'var(--color-text)' : 'var(--color-accent)',
                   fontWeight: isLocked(r, c) ? 600 : 500,
                   outline:
                     selected && selected[0] === r && selected[1] === c
                       ? '2px solid var(--color-accent)'
                       : 'none',
                   outlineOffset: '-2px',
-                  borderRadius: '2px',
                 }"
               >
                 {{ displayValue(r, c) }}
@@ -433,13 +441,13 @@ function displayValue(r, c) {
         </div>
 
         <!-- 數字鍵盤 + 操作 -->
-        <div class="lg:w-72 flex flex-col gap-3">
-          <div class="grid grid-cols-5 lg:grid-cols-3 gap-2">
+        <div class="w-full lg:w-72 flex flex-col gap-3">
+          <div class="grid grid-cols-5 sm:grid-cols-5 lg:grid-cols-3 gap-1.5 sm:gap-2">
             <button
               v-for="n in 9"
               :key="n"
               @click="setNumber(n)"
-              class="aspect-square sm:aspect-auto sm:py-3 rounded-lg text-lg font-medium transition hover:opacity-90"
+              class="aspect-square lg:aspect-auto lg:py-3 rounded-lg text-base sm:text-lg font-medium transition hover:opacity-90"
               :style="{
                 background: 'var(--color-bg-soft)',
                 border: '1px solid var(--color-border)',
@@ -450,7 +458,7 @@ function displayValue(r, c) {
             </button>
             <button
               @click="clearCell"
-              class="aspect-square sm:aspect-auto sm:py-3 rounded-lg text-sm transition hover:opacity-90"
+              class="aspect-square lg:aspect-auto lg:py-3 rounded-lg text-xs sm:text-sm transition hover:opacity-90"
               :style="{
                 background: 'var(--color-bg-soft)',
                 border: '1px solid var(--color-border)',
@@ -461,17 +469,10 @@ function displayValue(r, c) {
             </button>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 mt-1">
+          <div class="mt-1">
             <button
-              @click="saveGame"
-              class="py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
-              :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
-            >
-              💾 儲存
-            </button>
-            <button
-              @click="toggleSolution"
-              class="py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
+              @click="requestShowSolution"
+              class="w-full py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
               :style="{
                 background: showingSolution ? 'var(--color-accent-soft)' : 'var(--color-bg-soft)',
                 border: '1px solid var(--color-border)',
@@ -483,7 +484,7 @@ function displayValue(r, c) {
           </div>
 
           <div class="text-xs leading-relaxed mt-1" :style="{ color: 'var(--color-text-mute)' }">
-            提示：可用鍵盤 1–9 輸入、方向鍵移動、Backspace 清除。錯誤的數字會以紅色顯示。
+            提示：可用鍵盤 1–9 輸入、方向鍵移動、Backspace 清除。每下一步會自動儲存。
           </div>
         </div>
       </div>
@@ -526,14 +527,95 @@ function displayValue(r, c) {
             class="py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
             :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
           >
-            繼續上次的遊戲
+            是，繼續上次的遊戲
           </button>
           <button
             @click="chooseNew"
             class="py-2.5 rounded-lg text-sm font-medium border transition"
             :style="{ borderColor: 'var(--color-border)', color: 'var(--color-text-soft)' }"
           >
-            開始新的一局
+            否，開始新的一局
+          </button>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <!-- 新遊戲難度選擇視窗 -->
+  <transition name="fade">
+    <div
+      v-if="showNewGameDialog"
+      class="fixed inset-0 z-50 grid place-items-center p-4"
+      :style="{ background: 'color-mix(in srgb, #000 60%, transparent)' }"
+    >
+      <div class="card w-full max-w-sm p-6" :style="{ background: 'var(--color-bg-elev)' }">
+        <h3 class="font-serif text-xl mb-2">選擇難度</h3>
+        <p class="text-sm mb-4 leading-relaxed" :style="{ color: 'var(--color-text-soft)' }">
+          挑一個難度，按下確認就會開始一局新遊戲。
+        </p>
+        <div class="flex flex-col gap-2 mb-5">
+          <button
+            v-for="d in ['easy', 'medium', 'hard']"
+            :key="d"
+            @click="pendingDifficulty = d"
+            class="py-2.5 px-4 rounded-lg text-sm font-medium border transition text-left flex items-center justify-between"
+            :style="
+              pendingDifficulty === d
+                ? { background: 'var(--color-accent-soft)', borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }
+                : { background: 'var(--color-bg-soft)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }
+            "
+          >
+            <span>{{ DIFF_LABEL[d] }}</span>
+            <span v-if="pendingDifficulty === d">✓</span>
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <button
+            v-if="board"
+            @click="cancelNewGame"
+            class="flex-1 py-2.5 rounded-lg text-sm border transition"
+            :style="{ borderColor: 'var(--color-border)', color: 'var(--color-text-soft)' }"
+          >
+            取消
+          </button>
+          <button
+            @click="confirmNewGame"
+            class="flex-1 py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
+            :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
+          >
+            確認
+          </button>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <!-- 顯示解答確認視窗 -->
+  <transition name="fade">
+    <div
+      v-if="showSolutionConfirmDialog"
+      class="fixed inset-0 z-50 grid place-items-center p-4"
+      :style="{ background: 'color-mix(in srgb, #000 60%, transparent)' }"
+    >
+      <div class="card w-full max-w-sm p-6" :style="{ background: 'var(--color-bg-elev)' }">
+        <h3 class="font-serif text-xl mb-2">要顯示解答嗎？</h3>
+        <p class="text-sm mb-5 leading-relaxed" :style="{ color: 'var(--color-text-soft)' }">
+          確認後會直接顯示完整答案，遊戲樂趣會少一半喔。
+        </p>
+        <div class="flex gap-2">
+          <button
+            @click="cancelShowSolution"
+            class="flex-1 py-2.5 rounded-lg text-sm border transition"
+            :style="{ borderColor: 'var(--color-border)', color: 'var(--color-text-soft)' }"
+          >
+            取消
+          </button>
+          <button
+            @click="confirmShowSolution"
+            class="flex-1 py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
+            :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
+          >
+            顯示解答
           </button>
         </div>
       </div>
@@ -562,7 +644,7 @@ function displayValue(r, c) {
             關閉
           </button>
           <button
-            @click="(showCompleteDialog = false), newGameWith(difficulty)"
+            @click="(showCompleteDialog = false), openNewGameDialog()"
             class="flex-1 py-2.5 rounded-lg text-sm font-medium transition hover:opacity-90"
             :style="{ background: 'var(--color-accent)', color: '#0b0d10' }"
           >
@@ -575,7 +657,6 @@ function displayValue(r, c) {
 </template>
 
 <style scoped>
-/* 3x3 區塊邊界（在第 3、6 列/行加粗線） */
 .sudoku-r {
   box-shadow: inset -1px 0 0 0 var(--color-text-mute);
 }

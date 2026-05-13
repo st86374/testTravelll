@@ -26,15 +26,15 @@ function fmtTime(d) {
 </script>
 
 <template>
-  <section class="container-page pt-12 pb-6">
+  <section class="container-page pt-10 sm:pt-12 pb-4 sm:pb-6">
     <p class="chip mb-3">文章</p>
-    <h1 class="font-serif text-3xl sm:text-4xl tracking-tight">寫一些東西</h1>
-    <p class="mt-3 max-w-2xl text-[var(--color-text-soft)]">
+    <h1 class="font-serif text-2xl sm:text-4xl tracking-tight">寫一些東西</h1>
+    <p class="mt-3 max-w-2xl text-sm sm:text-base text-[var(--color-text-soft)]">
       食記、旅行筆記、技術小心得 — 想到什麼寫什麼。
     </p>
 
-    <div class="mt-6 flex items-center gap-3">
-      <div class="relative flex-1 max-w-md">
+    <div class="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div class="relative w-full sm:flex-1 sm:max-w-md">
         <input
           v-model="q"
           type="search"
@@ -48,12 +48,12 @@ function fmtTime(d) {
         />
         <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 opacity-60" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       </div>
-      <div class="flex items-center gap-3 text-xs text-[var(--color-text-mute)]">
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-[var(--color-text-mute)]">
         <span>{{ filtered.length }} 篇</span>
         <span v-if="fetchedAt">· {{ fmtTime(fetchedAt) }}</span>
         <button
           type="button"
-          class="px-3 py-1 rounded-full border transition hover:text-[var(--color-accent)]"
+          class="ml-auto sm:ml-0 px-3 py-1 rounded-full border transition hover:text-[var(--color-accent)]"
           :style="{ borderColor: 'var(--color-border)' }"
           :disabled="loading"
           @click="load"

@@ -73,7 +73,7 @@ function escape(s) {
 </script>
 
 <template>
-  <section class="container-page pt-10 pb-16 max-w-3xl">
+  <section class="container-page pt-8 sm:pt-10 pb-12 sm:pb-16 max-w-3xl">
     <RouterLink
       to="/posts"
       class="text-xs text-[var(--color-text-mute)] hover:text-[var(--color-accent)] transition"
@@ -90,7 +90,7 @@ function escape(s) {
         <p class="text-sm text-[var(--color-text-mute)]">
           {{ fmtDate(post.publishedAt) }}<span v-if="post.author"> ・ {{ post.author }}</span>
         </p>
-        <h1 class="mt-2 font-serif text-3xl sm:text-4xl tracking-tight">{{ post.title }}</h1>
+        <h1 class="mt-2 font-serif text-2xl sm:text-3xl md:text-4xl leading-snug tracking-tight">{{ post.title }}</h1>
         <p v-if="post.excerpt" class="mt-3 text-[var(--color-text-soft)]">{{ post.excerpt }}</p>
         <div v-if="post.tags?.length" class="mt-3 flex flex-wrap gap-1.5">
           <span v-for="t in post.tags" :key="t" class="chip">#{{ t }}</span>

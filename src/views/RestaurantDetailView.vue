@@ -57,7 +57,7 @@ function fmtDate(d) {
 </script>
 
 <template>
-  <section class="container-page pt-10 pb-16">
+  <section class="container-page pt-8 sm:pt-10 pb-12 sm:pb-16">
     <RouterLink
       to="/restaurants"
       class="text-xs text-[var(--color-text-mute)] hover:text-[var(--color-accent)] transition"
@@ -73,13 +73,13 @@ function fmtDate(d) {
     </div>
 
     <article v-else class="mt-4">
-      <header class="flex flex-wrap items-end justify-between gap-3">
+      <header class="flex flex-col sm:flex-row sm:flex-wrap sm:items-end sm:justify-between gap-3">
         <div class="min-w-0">
           <p class="chip mb-2">{{ restaurant.cuisine || '餐廳' }}</p>
-          <h1 class="font-serif text-3xl sm:text-4xl tracking-tight">
+          <h1 class="font-serif text-2xl sm:text-3xl md:text-4xl leading-snug tracking-tight break-words">
             {{ displayName }}
           </h1>
-          <p class="mt-1 text-sm text-[var(--color-text-mute)]">
+          <p class="mt-1 text-sm text-[var(--color-text-mute)] break-words">
             {{ [restaurant.area, displayAddress].filter(Boolean).join(' ・ ') || '—' }}
           </p>
           <p
@@ -91,7 +91,7 @@ function fmtDate(d) {
             class="mt-1 text-xs text-[var(--color-text-mute)]"
           >沒辦法從 Google Maps 連結讀取資料（CORS proxy 失敗）</p>
         </div>
-        <div class="text-right text-sm">
+        <div class="flex flex-wrap sm:flex-col items-start sm:items-end gap-x-3 gap-y-1 text-sm">
           <div v-if="displayRating != null" :style="{ color: 'var(--color-accent)' }">
             ★ {{ Number(displayRating).toFixed(1) }}
             <span v-if="displayRatingCount != null" class="text-[var(--color-text-mute)]">
@@ -107,7 +107,7 @@ function fmtDate(d) {
         </div>
       </header>
 
-      <div class="mt-8 grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <div class="mt-6 sm:mt-8 grid gap-4 sm:gap-6 lg:grid-cols-[1.1fr_1fr]">
         <div class="card overflow-hidden aspect-[4/3]">
           <iframe
             :src="mapEmbed"
@@ -117,17 +117,17 @@ function fmtDate(d) {
           ></iframe>
         </div>
 
-        <div class="card p-6">
+        <div class="card p-4 sm:p-6">
           <img
             v-if="displayImage"
             :src="displayImage"
             :alt="displayName"
             loading="lazy"
             referrerpolicy="no-referrer"
-            class="w-full h-44 object-cover rounded-lg mb-4"
+            class="w-full h-40 sm:h-44 object-cover rounded-lg mb-4"
           />
 
-          <h2 class="font-serif text-xl mb-3">心得</h2>
+          <h2 class="font-serif text-lg sm:text-xl mb-2 sm:mb-3">心得</h2>
           <p class="prose-tomm whitespace-pre-line">
             {{ restaurant.note || '還沒寫到這間，之後補。' }}
           </p>
